@@ -9,8 +9,9 @@ def get_video_files(folder_path):
     valid_exts = ['.mp4', '.mov', '.avi']
     return [f for f in os.listdir(folder_path) if os.path.splitext(f)[1].lower() in valid_exts]
 
-def create_plan(shirt_name, current_history):
-    """สุ่มเลือกคลิปตามโหมดและเลี่ยงประวัติเดิม"""
+# 🌟 1. เพิ่ม user_mode ตรงบรรทัดนี้
+def create_plan(shirt_name, current_history, user_mode):
+    """จัดเรียงคลิปตามโหมดที่ผู้ใช้เลือกและเลี่ยงประวัติเดิม"""
     shirt_dir = os.path.join(config.BASE_DIR, shirt_name)
     
     hook_dir = os.path.join(shirt_dir, config.SUBFOLDERS[0])
@@ -31,7 +32,8 @@ def create_plan(shirt_name, current_history):
         hook_clip = os.path.join(hook_dir, random.choice(hook_files))
         outro_clip = os.path.join(outro_dir, random.choice(outro_files))
         
-        mode = random.randint(1, 3)
+        # 🌟 2. เปลี่ยนจากการสุ่ม ให้มาใช้ค่าโหมดที่ผู้ใช้เป็นคนเลือก
+        mode = user_mode 
         show_clips = []
         
         if mode == 1: 
