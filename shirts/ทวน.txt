@@ -1,0 +1,4 @@
+เส้นทางข้อความ
+"C:\Users\KK_KK\OneDrive - Rajamangala University of Technology Phranakhon\เดสก์ท็อป\shirt_maker\shirts\text\เสื้อดำ\data.json"
+เส้นทางฟอร์น
+C:\Users\KK_KK\OneDrive - Rajamangala University of Technology Phranakhon\เดสก์ท็อป\shirt_maker\fonts

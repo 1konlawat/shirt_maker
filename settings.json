@@ -1,6 +1,6 @@
 {
-    "resolution": "720p",
-    "crf": "23",
-    "zoom_max": 0.15,
-    "transition_duration": 0.3
+    "resolution": "1080p",
+    "crf": "18",
+    "zoom_max": 0.08,
+    "transition_duration": 0.1
 }

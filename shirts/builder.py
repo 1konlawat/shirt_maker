@@ -5,7 +5,7 @@ import probe
 import effects
 import config
 
-# --- เริ่ม: ส่วนตั้งค่าระบบสติกเกอร์ ---
+# --- ส่วนตั้งค่าสติกเกอร์ (คงเดิม) ---
 def get_random_png(folder_path):
     if not os.path.exists(folder_path):
         return None
@@ -32,15 +32,10 @@ sticker_configs = [
         "overlay": "-200:H-h+100"
     }
 ]
-# --- จบ: ส่วนตั้งค่าระบบสติกเกอร์ ---
 
-def build_video(plan, out_filename, use_zoom, use_transition, use_sticker):
+# 🌟 เพิ่มรับค่า text_image_path เข้ามาที่นี่
+def build_video(plan, out_filename, use_zoom, use_transition, use_sticker, text_image_path=None):
     
-    # ลบบรรทัด ask_sticker = input(...) ออกไปเลย
-    
-    print(f"🔄 กำลังวัดความยาวคลิปทั้ง {len(plan)} คลิป...")
-    durations = [probe.get_video_duration(clip) for clip in plan]
-
     print(f"🔄 กำลังวัดความยาวคลิปทั้ง {len(plan)} คลิป...")
     durations = [probe.get_video_duration(clip) for clip in plan]
     
@@ -56,10 +51,15 @@ def build_video(plan, out_filename, use_zoom, use_transition, use_sticker):
     for clip in plan:
         inputs.extend(["-i", os.path.abspath(clip)])
         
+    # 🌟 ถ้าระบบส่งไฟล์รูปข้อความมา ให้โหลดเข้าเป็น Input ต่อจากวิดีโอหลัก
+    text_input_idx = -1
+    if text_image_path:
+        inputs.extend(["-i", text_image_path])
+        text_input_idx = len(plan) # บันทึกเลขลำดับช่องทางของไฟล์ข้อความ
+        
     filter_complex = ""
-    fps = 30
+    fps = 60  
     
-    # 🌟 ดึงค่าขนาดหน้าจอจากระบบ Menu
     if config.SETTINGS.get("resolution") == "1080p":
         w, h = 1080, 1920
     else:
@@ -69,6 +69,7 @@ def build_video(plan, out_filename, use_zoom, use_transition, use_sticker):
         filter_complex += f"[{i}:a]aformat=sample_rates=44100:channel_layouts=stereo[a{i}];"
         filter_complex += f"[{i}:v]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1,fps={fps}[v_base{i}];"
         
+        # จัดการเรื่อง Zoom
         if use_zoom:
             eff = clip_effects[i]
             zoom_level = eff["zoom"]
@@ -79,11 +80,19 @@ def build_video(plan, out_filename, use_zoom, use_transition, use_sticker):
             else:
                 z_expr = f"(1+{zoom_level})-{zoom_level}*(in/{frames})"
             
-            filter_complex += f"[v_base{i}]zoompan=z='{z_expr}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s={w}x{h}:fps={fps},unsharp=3:3:0.5[v{i}];"
+            filter_complex += f"[v_base{i}]zoompan=z='{z_expr}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s={w}x{h}:fps={fps},unsharp=3:3:0.5[v_eff{i}];"
         else:
-            filter_complex += f"[v_base{i}]copy[v{i}];"
+            filter_complex += f"[v_base{i}]copy[v_eff{i}];"
             
-    # 🌟 ดึงค่าความเร็วทรานซิชันจากระบบ Menu
+        # 🌟 จัดการเอาข้อความวางทับ เฉพาะคลิปฮุก (i == 0)
+        if i == 0 and text_image_path:
+            # วางทับด้วยภาพโปร่งใสเต็มจอที่สร้างจาก text_maker.py
+            filter_complex += f"[{text_input_idx}:v]scale={w}:{h}[txt_scaled];"
+            filter_complex += f"[v_eff0][txt_scaled]overlay=0:0[v0];"
+        else:
+            # ส่วนคลิปที่ 2 เป็นต้นไป ก็ปล่อยรันปกติ ไม่มีการวางข้อความ
+            filter_complex += f"[v_eff{i}]copy[v{i}];"
+            
     trans_dur = config.SETTINGS.get("transition_duration", 0.3)
     concat_v_streams = ""
     concat_a_streams = ""
@@ -111,13 +120,11 @@ def build_video(plan, out_filename, use_zoom, use_transition, use_sticker):
             concat_v_streams += f"[v{i}]"
             concat_a_streams += f"[a{i}]"
             
-    # สิ้นสุดการตัดต่อวิดีโอหลัก จะได้ผลลัพธ์เป็น [outv]
     filter_complex += f"{concat_v_streams}concat=n={concat_count}:v=1:a=0[outv];"
     filter_complex += f"{concat_a_streams}concat=n={concat_count}:v=0:a=1[outa]"
     
-    final_v_map = "[outv]" # ถ้าไม่มีสติกเกอร์ จะใช้ [outv] ไปแมปออกวิดีโอเลย
+    final_v_map = "[outv]" 
 
-    # --- 🌟 ระบบประกอบร่างสติกเกอร์ ---
     if use_sticker:
         valid_stickers = []
         for config_item in sticker_configs:
@@ -133,45 +140,40 @@ def build_video(plan, out_filename, use_zoom, use_transition, use_sticker):
         if valid_stickers:
             print("✅ เปิดระบบสติกเกอร์: พบสติกเกอร์", len(valid_stickers), "ชิ้น")
             
-            # เติมตัวสติกเกอร์เข้าไปใน inputs (-i) ต่อจากวิดีโอหลัก
+            # 🌟 ปรับฐานการนับ Index ของสติกเกอร์ (ชดเชยหากมีไฟล์ข้อความแทรกเข้ามาใน Inputs)
             base_input_index = len(plan)
-            
-            # ต้องใส่ลูกน้ำ ; ขั้นระหว่าง filter ตัดต่อหลัก กับ filter สติกเกอร์ที่กำลังจะสร้าง
+            if text_image_path:
+                base_input_index += 1
+                
             filter_complex += ";" 
-            
-            current_stream = "outv" # เริ่มรับภาพที่ตัดต่อเสร็จแล้วจาก [outv] มาเป็นพื้นหลัง
+            current_stream = "outv" 
             
             for i, st in enumerate(valid_stickers):
                 input_idx = base_input_index + i
-                inputs.extend(["-i", st["file"]]) # เอาไฟล์สติกเกอร์ยัดเข้าคำสั่ง
+                inputs.extend(["-i", st["file"]]) 
                 
                 scale_lbl = f"st{i}"
                 out_stream = f"ovl{i}"
                 
-                # 1. ย่อขนาดสติกเกอร์
                 filter_complex += f"[{input_idx}:v]scale={st['scale']}:-1[{scale_lbl}];"
                 
-                # 2. วางทับ
                 if i == len(valid_stickers) - 1:
-                    # ถ้าเป็นสติกเกอร์ชิ้นสุดท้าย ให้ตั้งชื่อผลลัพธ์ว่า [final_v] เพื่อส่งออก
                     filter_complex += f"[{current_stream}][{scale_lbl}]overlay={st['overlay']}[final_v]"
                     final_v_map = "[final_v]"
                 else:
-                    # ถ้ายังมีชิ้นอื่นต่อ ให้รันชื่อตัวแปรต่อไปเรื่อยๆ
                     filter_complex += f"[{current_stream}][{scale_lbl}]overlay={st['overlay']}[{out_stream}];"
                     current_stream = out_stream
         else:
             print("❌ ไม่พบไฟล์สติกเกอร์ในโฟลเดอร์ที่กำหนดเลย (ข้ามการแปะสติกเกอร์)")
 
-    # 🌟 ดึงค่าความคมชัด CRF จากระบบ Menu
     crf_val = config.SETTINGS.get("crf", "23")
     
     cmd = [
         "ffmpeg", "-y"
     ] + inputs + [
         "-filter_complex", filter_complex,
-        "-map", final_v_map,  # ดึงภาพจาก final_v_map (อาจจะเป็น [outv] หรือ [final_v])
-        "-map", "[outa]",     # ดึงเสียงปกติ
+        "-map", final_v_map, 
+        "-map", "[outa]",    
         "-c:v", "libx264",
         "-preset", "fast",  
         "-crf", str(crf_val), 
